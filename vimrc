@@ -55,6 +55,8 @@ filetype plugin on
 filetype indent on
 " set filetype=py
 set ttimeoutlen=50
+set guifont=DejaVu\ Sans\ Mono\ 9
+set autoread
 
 autocmd FileType help set ma 
 autocmd FileType help set noreadonly
@@ -62,9 +64,9 @@ autocmd BufWritePost ~/.vim/doc/* :helptags ~/.vim/doc
 autocmd FileType python setlocal et sta sw=4 sts=4
 
 " mouse
-"if has('mouse')
-"	set mouse=a
-"endif
+if has('mouse')
+	set mouse=a
+endif
 
 """"""""""""""""""""""""""""""""""""""""
 "
@@ -109,7 +111,11 @@ let NERDTreeDirArrows=1 "目录箭头 1 显示箭头  0传统+-|号
 "
 """"""""""""""""""""""""""""""""""""""""
 map ,f :q!<CR>
-
+map ,w :w!<CR>
+""""""""""""""""""""""""""""""
+" => Golang section
+""""""""""""""""""""""""""""""
+autocmd BufRead,BufNewFile *.go set filetype=go
 
 """"""""""""""""""""""""""""""""""""""""
 "
