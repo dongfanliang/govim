@@ -1,4 +1,5 @@
-# Copyright (C) 2011, 2012  Google Inc.
+# Copyright (C) 2011-2012 Google Inc.
+#               2016      YouCompleteMe contributors
 #
 # This file is part of YouCompleteMe.
 #
@@ -32,7 +33,7 @@ import signal
 import base64
 from subprocess import PIPE
 from tempfile import NamedTemporaryFile
-from ycm import paths, vimsupport
+from ycm import base, paths, vimsupport
 from ycmd import utils
 from ycmd import server_utils
 from ycmd.request_wrap import RequestWrap
@@ -49,12 +50,7 @@ from ycm.client.completion_request import ( CompletionRequest,
 from ycm.client.omni_completion_request import OmniCompletionRequest
 from ycm.client.event_notification import ( SendEventNotificationAsync,
                                             EventNotification )
-
-try:
-  from UltiSnips import UltiSnips_Manager
-  USE_ULTISNIPS_DATA = True
-except ImportError:
-  USE_ULTISNIPS_DATA = False
+from ycm.client.shutdown_request import SendShutdownRequest
 
 
 def PatchNoProxy():
@@ -62,6 +58,7 @@ def PatchNoProxy():
   additions = '127.0.0.1,localhost'
   os.environ['no_proxy'] = ( additions if not current_value
                              else current_value + ',' + additions )
+
 
 # We need this so that Requests doesn't end up using the local HTTP proxy when
 # talking to ycmd. Users should actually be setting this themselves when
@@ -103,10 +100,12 @@ CORE_OUTDATED_MESSAGE = (
   'script. See the documentation for more details.' )
 SERVER_IDLE_SUICIDE_SECONDS = 10800  # 3 hours
 DIAGNOSTIC_UI_FILETYPES = set( [ 'cpp', 'cs', 'c', 'objc', 'objcpp' ] )
+LOGFILE_FORMAT = 'ycmd_{port}_{std}_'
 
 
 class YouCompleteMe( object ):
   def __init__( self, user_options ):
+    self._available_completers = {}
     self._user_options = user_options
     self._user_notified_about_crash = False
     self._diag_interface = DiagnosticInterface( user_options )
@@ -127,6 +126,7 @@ class YouCompleteMe( object ):
 
   def _SetupServer( self ):
     self._available_completers = {}
+    self._user_notified_about_crash = False
     server_port = utils.GetUnusedLocalhostPort()
     # The temp options file is deleted by ycmd during startup
     with NamedTemporaryFile( delete = False, mode = 'w+' ) as options_file:
@@ -143,15 +143,12 @@ class YouCompleteMe( object ):
                '--options_file={0}'.format( options_file.name ),
                '--log={0}'.format( self._user_options[ 'server_log_level' ] ),
                '--idle_suicide_seconds={0}'.format(
-                  SERVER_IDLE_SUICIDE_SECONDS )]
+                  SERVER_IDLE_SUICIDE_SECONDS ) ]
 
-      filename_format = os.path.join( utils.PathToCreatedTempDir(),
-                                      'server_{port}_{std}.log' )
-
-      self._server_stdout = filename_format.format( port = server_port,
-                                                    std = 'stdout' )
-      self._server_stderr = filename_format.format( port = server_port,
-                                                    std = 'stderr' )
+      self._server_stdout = utils.CreateLogfile(
+          LOGFILE_FORMAT.format( port = server_port, std = 'stdout' ) )
+      self._server_stderr = utils.CreateLogfile(
+          LOGFILE_FORMAT.format( port = server_port, std = 'stderr' ) )
       args.append( '--stdout={0}'.format( self._server_stdout ) )
       args.append( '--stderr={0}'.format( self._server_stderr ) )
 
@@ -206,16 +203,15 @@ class YouCompleteMe( object ):
     return self._server_popen.pid
 
 
-  def _ServerCleanup( self ):
+  def _ShutdownServer( self ):
     if self.IsServerAlive():
-      self._server_popen.terminate()
+      SendShutdownRequest()
 
 
   def RestartServer( self ):
     self._CloseLogs()
     vimsupport.PostVimMessage( 'Restarting ycmd server...' )
-    self._user_notified_about_crash = False
-    self._ServerCleanup()
+    self._ShutdownServer()
     self._SetupServer()
 
 
@@ -229,13 +225,27 @@ class YouCompleteMe( object ):
             self._omnicomp, wrapped_request_data )
         return self._latest_completion_request
 
-    request_data[ 'working_dir' ] = os.getcwd()
+    request_data[ 'working_dir' ] = utils.GetCurrentDirectory()
 
     self._AddExtraConfDataIfNeeded( request_data )
     if force_semantic:
       request_data[ 'force_semantic' ] = True
     self._latest_completion_request = CompletionRequest( request_data )
     return self._latest_completion_request
+
+
+  def GetCompletions( self ):
+    request = self.GetCurrentCompletionRequest()
+    request.Start()
+    while not request.Done():
+      try:
+        if vimsupport.GetBoolValue( 'complete_check()' ):
+          return { 'words' : [], 'refresh' : 'always' }
+      except KeyboardInterrupt:
+        return { 'words' : [], 'refresh' : 'always' }
+
+    results = base.AdjustCandidateInsertionText( request.Response() )
+    return { 'words' : results, 'refresh' : 'always' }
 
 
   def SendCommandRequest( self, arguments, completer ):
@@ -301,24 +311,23 @@ class YouCompleteMe( object ):
     self._AddSyntaxDataIfNeeded( extra_data )
     self._AddExtraConfDataIfNeeded( extra_data )
 
-    self._latest_file_parse_request = EventNotification( 'FileReadyToParse',
-                                                          extra_data )
+    self._latest_file_parse_request = EventNotification(
+      'FileReadyToParse', extra_data = extra_data )
     self._latest_file_parse_request.Start()
 
 
   def OnBufferUnload( self, deleted_buffer_file ):
     if not self.IsServerAlive():
       return
-    SendEventNotificationAsync( 'BufferUnload',
-                                { 'unloaded_buffer': deleted_buffer_file } )
+    SendEventNotificationAsync( 'BufferUnload', filepath = deleted_buffer_file )
 
 
   def OnBufferVisit( self ):
     if not self.IsServerAlive():
       return
     extra_data = {}
-    _AddUltiSnipsDataIfNeeded( extra_data )
-    SendEventNotificationAsync( 'BufferVisit', extra_data )
+    self._AddUltiSnipsDataIfNeeded( extra_data )
+    SendEventNotificationAsync( 'BufferVisit', extra_data = extra_data )
 
 
   def OnInsertLeave( self ):
@@ -332,7 +341,7 @@ class YouCompleteMe( object ):
 
 
   def OnVimLeave( self ):
-    self._ServerCleanup()
+    self._ShutdownServer()
 
 
   def OnCurrentIdentifierFinished( self ):
@@ -576,7 +585,8 @@ class YouCompleteMe( object ):
       debug_info = BaseRequest.PostDataToHandler( BuildRequestData(),
                                                   'detailed_diagnostic' )
       if 'message' in debug_info:
-        vimsupport.EchoText( debug_info[ 'message' ] )
+        vimsupport.PostVimMessage( debug_info[ 'message' ],
+                                   warning = False )
     except ServerError as e:
       vimsupport.PostVimMessage( str( e ) )
 
@@ -664,12 +674,8 @@ class YouCompleteMe( object ):
   def _AddTagsFilesIfNeeded( self, extra_data ):
     def GetTagFiles():
       tag_files = vim.eval( 'tagfiles()' )
-      # getcwd() throws an exception when the CWD has been deleted.
-      try:
-        current_working_directory = os.getcwd()
-      except OSError:
-        return []
-      return [ os.path.join( current_working_directory, x ) for x in tag_files ]
+      return [ os.path.join( utils.GetCurrentDirectory(), tag_file )
+               for tag_file in tag_files ]
 
     if not self._user_options[ 'collect_identifiers_from_tags_files' ]:
       return
@@ -687,25 +693,16 @@ class YouCompleteMe( object ):
         extra_conf_vim_data )
 
 
-def _AddUltiSnipsDataIfNeeded( extra_data ):
-  if not USE_ULTISNIPS_DATA:
-    return
+  def _AddUltiSnipsDataIfNeeded( self, extra_data ):
+    # See :h UltiSnips#SnippetsInCurrentScope.
+    try:
+      vim.eval( 'UltiSnips#SnippetsInCurrentScope( 1 )' )
+    except vim.error:
+      return
 
-  try:
-    # Since UltiSnips may run in a different python interpreter (python 3) than
-    # YCM, UltiSnips_Manager singleton is not necessary the same as the one
-    # used by YCM. In particular, it means that we cannot rely on UltiSnips to
-    # set the current filetypes to the singleton. We need to do it ourself.
-    UltiSnips_Manager.reset_buffer_filetypes()
-    UltiSnips_Manager.add_buffer_filetypes(
-      vimsupport.GetVariableValue( '&filetype' ) )
-    rawsnips = UltiSnips_Manager._snips( '', True )
-  except:
-    return
-
-  # UltiSnips_Manager._snips() returns a class instance where:
-  # class.trigger - name of snippet trigger word ( e.g. defn or testcase )
-  # class.description - description of the snippet
-  extra_data[ 'ultisnips_snippets' ] = [
-    { 'trigger': x.trigger, 'description': x.description } for x in rawsnips
-  ]
+    snippets = vimsupport.GetVariableValue( 'g:current_ulti_dict_info' )
+    extra_data[ 'ultisnips_snippets' ] = [
+      { 'trigger': trigger,
+        'description': snippet[ 'description' ] }
+      for trigger, snippet in iteritems( snippets )
+    ]

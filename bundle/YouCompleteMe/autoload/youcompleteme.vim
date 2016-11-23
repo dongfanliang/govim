@@ -26,8 +26,7 @@ let s:defer_omnifunc = 1
 
 let s:old_cursor_position = []
 let s:cursor_moved = 0
-let s:moved_vertically_in_insert_mode = 0
-let s:previous_num_chars_on_current_line = strlen( getline('.') )
+let s:previous_allowed_buffer_number = 0
 
 
 function! s:UsingPython2()
@@ -90,8 +89,9 @@ function! youcompleteme#Enable()
     " the user does :enew and then :set ft=something, we need to run buf init
     " code again.
     autocmd BufReadPre * call s:OnBufferReadPre( expand( '<afile>:p' ) )
-    autocmd BufRead,BufEnter,FileType * call s:OnBufferVisit()
-    autocmd BufUnload * call s:OnBufferUnload( expand( '<afile>:p' ) )
+    autocmd BufRead,FileType * call s:OnBufferRead()
+    autocmd BufEnter * call s:OnBufferEnter()
+    autocmd BufUnload * call s:OnBufferUnload()
     autocmd CursorHold,CursorHoldI * call s:OnCursorHold()
     autocmd InsertLeave * call s:OnInsertLeave()
     autocmd InsertEnter * call s:OnInsertEnter()
@@ -108,9 +108,7 @@ function! youcompleteme#Enable()
   if s:defer_omnifunc
     augroup ycm_defer_omnifunc
       autocmd!
-      autocmd InsertEnter * call s:SetOmnicompleteFunc()
-                        \ | let s:defer_omnifunc = 0
-                        \ | autocmd! ycm_defer_omnifunc
+      autocmd InsertEnter * call s:DeferredUntilInsertEnter()
     augroup END
   endif
 
@@ -118,22 +116,31 @@ function! youcompleteme#Enable()
   " triggering for the first loaded file. This should be the last commands
   " executed in this function!
   call s:OnBufferReadPre( expand( '<afile>:p' ) )
-  call s:OnBufferVisit()
+  call s:OnBufferRead()
+endfunction
+
+
+function s:DeferredUntilInsertEnter()
+  let s:defer_omnifunc = 0
+  autocmd! ycm_defer_omnifunc
+
+  if s:AllowedToCompleteInCurrentBuffer()
+    call s:SetOmnicompleteFunc()
+  endif
 endfunction
 
 
 function! youcompleteme#EnableCursorMovedAutocommands()
-    augroup ycmcompletemecursormove
-        autocmd!
-        autocmd CursorMovedI * call s:OnCursorMovedInsertMode()
-        autocmd CursorMoved * call s:OnCursorMovedNormalMode()
-    augroup END
+  augroup ycmcompletemecursormove
+    autocmd!
+    autocmd CursorMoved * call s:OnCursorMovedNormalMode()
+    autocmd TextChangedI * call s:OnTextChangedInsertMode()
+  augroup END
 endfunction
 
 
 function! youcompleteme#DisableCursorMovedAutocommands()
-    autocmd! ycmcompletemecursormove CursorMoved *
-    autocmd! ycmcompletemecursormove CursorMovedI *
+  autocmd! ycmcompletemecursormove
 endfunction
 
 
@@ -324,10 +331,12 @@ function! s:TurnOffSyntasticForCFamily()
 endfunction
 
 
-function! s:AllowedToCompleteInCurrentFile()
-  if empty( &filetype ) ||
-        \ getbufvar( winbufnr( winnr() ), "&buftype" ) ==# 'nofile' ||
-        \ &filetype ==# 'qf'
+function! s:AllowedToCompleteInBuffer( buffer )
+  let buffer_filetype = getbufvar( a:buffer, '&filetype' )
+
+  if empty( buffer_filetype ) ||
+   \ getbufvar( a:buffer, '&buftype' ) ==# 'nofile' ||
+   \ buffer_filetype ==# 'qf'
     return 0
   endif
 
@@ -336,10 +345,28 @@ function! s:AllowedToCompleteInCurrentFile()
   endif
 
   let whitelist_allows = has_key( g:ycm_filetype_whitelist, '*' ) ||
-        \ has_key( g:ycm_filetype_whitelist, &filetype )
-  let blacklist_allows = !has_key( g:ycm_filetype_blacklist, &filetype )
+        \ has_key( g:ycm_filetype_whitelist, buffer_filetype )
+  let blacklist_allows = !has_key( g:ycm_filetype_blacklist, buffer_filetype )
 
   return whitelist_allows && blacklist_allows
+endfunction
+
+
+function! s:AllowedToCompleteInCurrentBuffer()
+  return s:AllowedToCompleteInBuffer( '%' )
+endfunction
+
+
+function! s:VisitedBufferRequiresReparse()
+  if !s:AllowedToCompleteInCurrentBuffer()
+    return 0
+  endif
+
+  if bufnr( '' ) ==# s:previous_allowed_buffer_number
+    return 0
+  endif
+  let s:previous_allowed_buffer_number = bufnr( '' )
+  return 1
 endfunction
 
 
@@ -427,13 +454,13 @@ function! s:OnBufferReadPre(filename)
   endif
 endfunction
 
-function! s:OnBufferVisit()
+function! s:OnBufferRead()
   " We need to do this even when we are not allowed to complete in the current
-  " file because we might be allowed to complete in the future! The canonical
+  " buffer because we might be allowed to complete in the future! The canonical
   " example is creating a new buffer with :enew and then setting a filetype.
   call s:SetUpYcmChangedTick()
 
-  if !s:AllowedToCompleteInCurrentFile()
+  if !s:AllowedToCompleteInCurrentBuffer()
     return
   endif
 
@@ -449,18 +476,31 @@ function! s:OnBufferVisit()
 endfunction
 
 
-function! s:OnBufferUnload( deleted_buffer_file )
-  if !s:AllowedToCompleteInCurrentFile() || empty( a:deleted_buffer_file )
+function! s:OnBufferEnter()
+  if !s:VisitedBufferRequiresReparse()
     return
   endif
 
+  exec s:python_command "ycm_state.OnBufferVisit()"
+  call s:OnFileReadyToParse()
+endfunction
+
+
+function! s:OnBufferUnload()
+  " Expanding <abuf> returns the unloaded buffer number as a string but we want
+  " it as a true number for the getbufvar function.
+  if !s:AllowedToCompleteInBuffer( str2nr( expand( '<abuf>' ) ) )
+    return
+  endif
+
+  let deleted_buffer_file = expand( '<afile>:p' )
   exec s:python_command "ycm_state.OnBufferUnload("
-        \ "vim.eval( 'a:deleted_buffer_file' ) )"
+        \ "vim.eval( 'deleted_buffer_file' ) )"
 endfunction
 
 
 function! s:OnCursorHold()
-  if !s:AllowedToCompleteInCurrentFile()
+  if !s:AllowedToCompleteInCurrentBuffer()
     return
   endif
 
@@ -508,24 +548,14 @@ function! s:SetOmnicompleteFunc()
   endif
 endfunction
 
-function! s:OnCursorMovedInsertMode()
-  if !s:AllowedToCompleteInCurrentFile()
+
+function! s:OnTextChangedInsertMode()
+  if !s:AllowedToCompleteInCurrentBuffer()
     return
   endif
 
   exec s:python_command "ycm_state.OnCursorMoved()"
   call s:UpdateCursorMoved()
-
-  " Basically, we need to only trigger the completion menu when the user has
-  " inserted or deleted a character, NOT just when the user moves in insert mode
-  " (with, say, the arrow keys). If we trigger the menu even on pure moves, then
-  " it's impossible to move in insert mode since the up/down arrows start moving
-  " the selected completion in the completion menu. Yeah, people shouldn't be
-  " moving in insert mode at all (that's what normal mode is for) but explain
-  " that to the users who complain...
-  if !s:BufferTextChangedSinceLastMoveInInsertMode()
-    return
-  endif
 
   call s:IdentifierFinishedOperations()
   if g:ycm_autoclose_preview_window_after_completion
@@ -546,7 +576,7 @@ endfunction
 
 
 function! s:OnCursorMovedNormalMode()
-  if !s:AllowedToCompleteInCurrentFile()
+  if !s:AllowedToCompleteInCurrentBuffer()
     return
   endif
 
@@ -556,7 +586,7 @@ endfunction
 
 
 function! s:OnInsertLeave()
-  if !s:AllowedToCompleteInCurrentFile()
+  if !s:AllowedToCompleteInCurrentBuffer()
     return
   endif
 
@@ -571,9 +601,7 @@ endfunction
 
 
 function! s:OnInsertEnter()
-  let s:previous_num_chars_on_current_line = strlen( getline('.') )
-
-  if !s:AllowedToCompleteInCurrentFile()
+  if !s:AllowedToCompleteInCurrentBuffer()
     return
   endif
 
@@ -584,27 +612,7 @@ endfunction
 function! s:UpdateCursorMoved()
   let current_position = getpos('.')
   let s:cursor_moved = current_position != s:old_cursor_position
-
-  let s:moved_vertically_in_insert_mode = s:old_cursor_position != [] &&
-        \ current_position[ 1 ] != s:old_cursor_position[ 1 ]
-
   let s:old_cursor_position = current_position
-endfunction
-
-
-function! s:BufferTextChangedSinceLastMoveInInsertMode()
-  let num_chars_in_current_cursor_line = strlen( getline('.') )
-
-  if s:moved_vertically_in_insert_mode
-    let s:previous_num_chars_on_current_line = num_chars_in_current_cursor_line
-    return 0
-  endif
-
-  let changed_text_on_current_line = num_chars_in_current_cursor_line !=
-        \ s:previous_num_chars_on_current_line
-  let s:previous_num_chars_on_current_line = num_chars_in_current_cursor_line
-
-  return changed_text_on_current_line
 endfunction
 
 
@@ -703,23 +711,8 @@ function! s:InvokeCompletion()
 endfunction
 
 
-exec s:python_until_eof
-def GetCompletionsInner():
-  request = ycm_state.GetCurrentCompletionRequest()
-  request.Start()
-  while not request.Done():
-    if bool( int( vim.eval( 'complete_check()' ) ) ):
-      return { 'words' : [], 'refresh' : 'always'}
-
-  results = base.AdjustCandidateInsertionText( request.Response() )
-  return { 'words' : results, 'refresh' : 'always' }
-EOF
-
-
 function! s:GetCompletions()
-  exec s:python_command "results = GetCompletionsInner()"
-  let results = s:Pyeval( 'results' )
-  return results
+  return s:Pyeval( 'ycm_state.GetCompletions()' )
 endfunction
 
 

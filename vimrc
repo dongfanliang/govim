@@ -18,7 +18,7 @@ set cursorline
 
 " 禁止折行
 set nowrap
-
+set backspace=2
 " indent
 set autoindent
 "set foldmethod=indent
@@ -64,9 +64,9 @@ autocmd BufWritePost ~/.vim/doc/* :helptags ~/.vim/doc
 autocmd FileType python setlocal et sta sw=4 sts=4
 
 " mouse
-if has('mouse')
-	set mouse=a
-endif
+" if has('mouse')
+	" set mouse=a
+" endif
 
 """"""""""""""""""""""""""""""""""""""""
 "
@@ -179,7 +179,7 @@ set cpoptions+=$
 
 " Do not know how to use autocmd yet, so the following line not working
 " autocmd FileType text setlocal textwidth=78
-set textwidth=78
+" set textwidth=78
 
 
 " get rid of the silly characters in window separators

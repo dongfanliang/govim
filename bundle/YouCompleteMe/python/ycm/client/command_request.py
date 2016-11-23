@@ -103,21 +103,32 @@ class CommandRequest( BaseRequest ):
 
   def _HandleFixitResponse( self ):
     if not len( self._response[ 'fixits' ] ):
-      vimsupport.EchoText( "No fixits found for current line" )
+      vimsupport.PostVimMessage( 'No fixits found for current line',
+                                 warning = False )
     else:
-      chunks = self._response[ 'fixits' ][ 0 ][ 'chunks' ]
       try:
-        vimsupport.ReplaceChunks( chunks )
+        fixit_index = 0
+
+        # When there are multiple fixit suggestions, present them as a list to
+        # the user hand have her choose which one to apply.
+        if len( self._response[ 'fixits' ] ) > 1:
+          fixit_index = vimsupport.SelectFromList(
+            "Multiple FixIt suggestions are available at this location. "
+            "Which one would you like to apply?",
+            [ fixit[ 'text' ] for fixit in self._response[ 'fixits' ] ] )
+
+        vimsupport.ReplaceChunks(
+          self._response[ 'fixits' ][ fixit_index ][ 'chunks' ] )
       except RuntimeError as e:
-        vimsupport.PostMultiLineNotice( str( e ) )
+        vimsupport.PostVimMessage( str( e ) )
 
 
   def _HandleBasicResponse( self ):
-    vimsupport.EchoText( self._response )
+    vimsupport.PostVimMessage( self._response, warning = False )
 
 
   def _HandleMessageResponse( self ):
-    vimsupport.EchoText( self._response[ 'message' ] )
+    vimsupport.PostVimMessage( self._response[ 'message' ], warning = False )
 
 
   def _HandleDetailedInfoResponse( self ):

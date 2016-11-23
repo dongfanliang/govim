@@ -23,25 +23,15 @@ from future import standard_library
 standard_library.install_aliases()
 from builtins import *  # noqa
 
-from ycm.test_utils import MockVimModule
+from ycm.tests.test_utils import MockVimModule
 MockVimModule()
 
 import sys
-from mock import MagicMock
 from hamcrest import assert_that, is_in, is_not
 
-from ycm.youcompleteme import YouCompleteMe
+from ycm.tests import YouCompleteMeInstance
 
 
-class YouCompleteMe_test():
-
-  def setUp( self ):
-    self.ycm = YouCompleteMe( MagicMock( spec_set = dict ) )
-
-
-  def tearDown( self ):
-    self.ycm.OnVimLeave()
-
-
-  def YcmCoreNotImported_test( self ):
-    assert_that( 'ycm_core', is_not( is_in( sys.modules ) ) )
+@YouCompleteMeInstance()
+def YouCompleteMe_YcmCoreNotImported_test( ycm ):
+  assert_that( 'ycm_core', is_not( is_in( sys.modules ) ) )

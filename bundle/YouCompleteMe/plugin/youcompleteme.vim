@@ -27,9 +27,9 @@ endfunction
 if exists( "g:loaded_youcompleteme" )
   call s:restore_cpo()
   finish
-elseif v:version < 703 || (v:version == 703 && !has('patch598'))
+elseif v:version < 704 || (v:version == 704 && !has('patch143'))
   echohl WarningMsg |
-        \ echomsg "YouCompleteMe unavailable: requires Vim 7.3.598+" |
+        \ echomsg "YouCompleteMe unavailable: requires Vim 7.4.143+" |
         \ echohl None
   call s:restore_cpo()
   finish
@@ -129,10 +129,14 @@ let g:ycm_disable_for_files_larger_than_kb =
 
 " On-demand loading. Let's use the autoload folder and not slow down vim's
 " startup procedure.
-augroup youcompletemeStart
-  autocmd!
-  autocmd VimEnter * call youcompleteme#Enable()
-augroup END
+if has( 'vim_starting' ) " loading at startup
+  augroup youcompletemeStart
+    autocmd!
+    autocmd VimEnter * call youcompleteme#Enable()
+  augroup END
+else " manual loading with :packadd
+  call youcompleteme#Enable()
+endif
 
 " This is basic vim plugin boilerplate
 call s:restore_cpo()

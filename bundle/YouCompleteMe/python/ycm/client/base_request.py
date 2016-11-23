@@ -154,19 +154,28 @@ class BaseRequest( object ):
   hmac_secret = ''
 
 
-def BuildRequestData( include_buffer_data = True ):
+def BuildRequestData( filepath = None ):
+  """Build request for the current buffer or the buffer corresponding to
+  |filepath| if specified."""
+  current_filepath = vimsupport.GetCurrentBufferFilepath()
+
+  if filepath and current_filepath != filepath:
+    # Cursor position is irrelevant when filepath is not the current buffer.
+    return {
+      'filepath': filepath,
+      'line_num': 1,
+      'column_num': 1,
+      'file_data': vimsupport.GetUnsavedAndSpecifiedBufferData( filepath )
+    }
+
   line, column = vimsupport.CurrentLineAndColumn()
-  filepath = vimsupport.GetCurrentBufferFilepath()
-  request_data = {
+
+  return {
+    'filepath': current_filepath,
     'line_num': line + 1,
     'column_num': column + 1,
-    'filepath': filepath
+    'file_data': vimsupport.GetUnsavedAndSpecifiedBufferData( current_filepath )
   }
-
-  if include_buffer_data:
-    request_data[ 'file_data' ] = vimsupport.GetUnsavedAndCurrentBufferData()
-
-  return request_data
 
 
 def JsonFromFuture( future ):
@@ -184,14 +193,14 @@ def JsonFromFuture( future ):
   return None
 
 
-def HandleServerException( exception ):
+def HandleServerException( exception, truncate = False ):
   serialized_exception = str( exception )
 
   # We ignore the exception about the file already being parsed since it comes
   # up often and isn't something that's actionable by the user.
   if 'already being parsed' in serialized_exception:
     return
-  vimsupport.PostMultiLineNotice( serialized_exception )
+  vimsupport.PostVimMessage( serialized_exception, truncate = truncate )
 
 
 def _ToUtf8Json( data ):
