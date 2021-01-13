@@ -1,4 +1,5 @@
-## install ##
+## install  ##
+* vim >= 8
 * mv govim .vim
 * ln -s .vim/vimrc .vimrc
 

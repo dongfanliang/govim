@@ -199,10 +199,25 @@ let g:solarized_termcolors=256
 let g:go_fmt_command = "goimports"
 let g:go_highlight_functions = 1
 let g:go_highlight_methods = 1
+let g:go_highlight_types = 1
 let g:go_highlight_structs = 1
 let g:go_highlight_operators = 1
 let g:go_highlight_build_constraints = 1
+let g:go_highlight_extra_types = 1
 let g:go_auto_type_info = 1
+let g:go_highlight_extra_types = 1
+let g:go_version_warning = 0
+
+let g:go_highlight_generate_tags = 1
+let g:go_highlight_format_strings = 1
+let g:go_updatetime = 400
+let g:go_auto_type_info = 1
+let g:go_auto_sameids = 1
+let g:go_info_mode = 'gopls'
+let g:go_def_mode = 'gopls'
+let g:go_referrers_mode = 'gopls'
+let g:go_def_mode = 'gopls'
+let g:go_rename_command = 'gopls'
 
 nmap tt :TagbarToggle<CR>
 
@@ -238,3 +253,4 @@ let g:ycm_seed_identifiers_with_syntax=1
 let b:delimitMate_expand_cr = 2 
 let b:delimitMate_expand_space=1
 let b:delimitMateBackspace=1
+
