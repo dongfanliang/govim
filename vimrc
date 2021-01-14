@@ -196,7 +196,7 @@ colorscheme molokai
 let g:solarized_termcolors=256
 
 " Vim-go
-let g:go_gopls_enabled = 0
+let g:go_gopls_enabled = 1
 let g:go_fmt_command = "goimports"
 let g:go_highlight_functions = 1
 let g:go_highlight_methods = 1
@@ -209,6 +209,7 @@ let g:go_auto_type_info = 1
 let g:go_highlight_extra_types = 1
 
 let g:go_highlight_generate_tags = 1
+let g:go_version_warning = 0
 let g:go_highlight_format_strings = 1
 let g:go_updatetime = 400
 let g:go_auto_type_info = 1
@@ -219,6 +220,8 @@ let g:go_referrers_mode = 'gopls'
 let g:go_def_mode = 'gopls'
 let g:go_rename_command = 'gopls'
 let g:go_bin_path = $HOME.'git/golang/bin'
+au FileType go nmap <Leader>gd <Plug>(go-doc)
+au FileType go nmap <Leader>gv <Plug>(go-doc-vertical)
 
 nmap tt :TagbarToggle<CR>
 
@@ -238,17 +241,17 @@ let g:airline_theme='powerlineish'
 let g:airline#extensions#whitespace#enabled = 0
 let g:airline#extensions#whitespace#symbol = '!'
 
-" setting ycm
-let g:ycm_key_list_select_completion = ['<C-j>']
-let g:ycm_key_list_previous_completion = ['<C-k>']
-set completeopt=longest,menu
-autocmd InsertLeave * if pumvisible() == 0|pclose|endif	"离开插入模式后自动关闭预览窗口
-inoremap <expr> <CR>       pumvisible() ? "\<C-y>" : "\<CR>"
-let g:ycm_min_num_of_chars_for_completion=2
-let g:ycm_cache_omnifunc=0
-let g:ycm_seed_identifiers_with_syntax=1	
-let g:ycm_collect_identifiers_from_comments_and_strings = 0
-let g:ycm_seed_identifiers_with_syntax=1
+" " setting ycm
+" let g:ycm_key_list_select_completion = ['<C-j>']
+" let g:ycm_key_list_previous_completion = ['<C-k>']
+" set completeopt=longest,menu
+" autocmd InsertLeave * if pumvisible() == 0|pclose|endif	"离开插入模式后自动关闭预览窗口
+" inoremap <expr> <CR>       pumvisible() ? "\<C-y>" : "\<CR>"
+" let g:ycm_min_num_of_chars_for_completion=2
+" let g:ycm_cache_omnifunc=0
+" let g:ycm_seed_identifiers_with_syntax=1	
+" let g:ycm_collect_identifiers_from_comments_and_strings = 0
+" let g:ycm_seed_identifiers_with_syntax=1
 
 " For delimitMate
 let b:delimitMate_expand_cr = 2 
